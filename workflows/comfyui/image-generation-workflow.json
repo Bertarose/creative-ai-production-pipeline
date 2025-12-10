@@ -1,0 +1,216 @@
+{
+  "workflow_name": "Basic Image Generation Workflow",
+  "description": "Starter workflow for agency production using ComfyUI. This demonstrates the fundamental node structure for text-to-image generation with control over key parameters.",
+  "use_case": "Production-grade image generation with consistency and control",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "CheckpointLoaderSimple",
+      "title": "Load Checkpoint",
+      "description": "Loads the base Stable Diffusion model. For agency work, start with realistic models like Realistic Vision or DreamShaper.",
+      "parameters": {
+        "ckpt_name": "realisticVisionV60B1_v51VAE.safetensors"
+      },
+      "outputs": {
+        "MODEL": "Connects to KSampler (node 5)",
+        "CLIP": "Connects to both CLIP Text Encode nodes (2 & 3)",
+        "VAE": "Connects to VAE Decode (node 6)"
+      },
+      "agency_notes": "Keep a library of approved models for different client needs: realistic, artistic, brand-specific. Test consistency before production."
+    },
+    {
+      "id": 2,
+      "type": "CLIPTextEncode",
+      "title": "Positive Prompt",
+      "description": "Your main creative prompt - what you want to generate",
+      "parameters": {
+        "text": "Professional corporate office interior, modern design, natural light streaming through floor-to-ceiling windows, minimalist furniture, green plants, bright and inviting atmosphere, architectural photography style, high detail, 8k"
+      },
+      "outputs": {
+        "CONDITIONING": "Connects to KSampler positive input (node 5)"
+      },
+      "agency_notes": "Build prompt libraries per client. Include technical specs (8k, high detail) and style references. Keep prompts under 75 tokens for optimal results."
+    },
+    {
+      "id": 3,
+      "type": "CLIPTextEncode",
+      "title": "Negative Prompt",
+      "description": "What to avoid in generation - quality issues, unwanted elements",
+      "parameters": {
+        "text": "blurry, low quality, distorted, deformed, watermark, signature, text, amateur, oversaturated, noise, artifacts, ugly, duplicate, morbid, mutilated, poorly drawn hands, poorly drawn face, mutation, cartoon, anime"
+      },
+      "outputs": {
+        "CONDITIONING": "Connects to KSampler negative input (node 5)"
+      },
+      "agency_notes": "Standard negative prompts ensure consistent quality. Add client-specific exclusions (e.g., 'no competitors logos', 'no certain colors')."
+    },
+    {
+      "id": 4,
+      "type": "EmptyLatentImage",
+      "title": "Set Image Dimensions",
+      "description": "Defines output resolution. Must be multiples of 64 for Stable Diffusion.",
+      "parameters": {
+        "width": 1024,
+        "height": 1024,
+        "batch_size": 1
+      },
+      "outputs": {
+        "LATENT": "Connects to KSampler latent input (node 5)"
+      },
+      "agency_notes": "Common agency sizes: 1024x1024 (square social), 1024x768 (landscape), 768x1024 (portrait). Increase batch_size for variations (uses more VRAM)."
+    },
+    {
+      "id": 5,
+      "type": "KSampler",
+      "title": "Sampler/Generator",
+      "description": "The core generation engine. Controls sampling method, steps, guidance strength.",
+      "parameters": {
+        "seed": 42,
+        "control_after_generate": "fixed",
+        "steps": 30,
+        "cfg": 7.5,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 1.0
+      },
+      "outputs": {
+        "LATENT": "Connects to VAE Decode (node 6)"
+      },
+      "parameter_explanations": {
+        "seed": "Fixed number ensures reproducibility. Lock this after client approval.",
+        "steps": "20-30 is standard. More steps = higher quality but slower (diminishing returns after 30).",
+        "cfg": "Classifier-Free Guidance. 7-8 is balanced. Lower = more creative, Higher = more literal prompt following.",
+        "sampler_name": "dpmpp_2m is fast and high quality. For production, stick with proven samplers.",
+        "scheduler": "karras provides good balance. 'normal' is default, 'exponential' for experimental.",
+        "denoise": "1.0 = full generation from noise. Lower values for img2img refinement."
+      },
+      "agency_notes": "After client approves a direction, LOCK the seed and sampler settings. Document these in project files for future regeneration."
+    },
+    {
+      "id": 6,
+      "type": "VAEDecode",
+      "title": "Decode Latent to Image",
+      "description": "Converts latent space representation to actual pixels",
+      "parameters": {},
+      "outputs": {
+        "IMAGE": "Connects to Save Image (node 7)"
+      },
+      "agency_notes": "VAE quality impacts final output. Use model-specific VAE when available for best results."
+    },
+    {
+      "id": 7,
+      "type": "SaveImage",
+      "title": "Save Output",
+      "description": "Saves generated image to output folder",
+      "parameters": {
+        "filename_prefix": "agency_project_clientname_"
+      },
+      "outputs": {},
+      "agency_notes": "Use descriptive filename prefixes: 'ClientName_Campaign_AssetType_'. Makes organization easier when generating hundreds of images."
+    }
+  ],
+  "workflow_execution_flow": [
+    "CheckpointLoader (1) → KSampler (5)",
+    "CheckpointLoader (1) → CLIPTextEncode Positive (2) → KSampler (5)",
+    "CheckpointLoader (1) → CLIPTextEncode Negative (3) → KSampler (5)",
+    "EmptyLatentImage (4) → KSampler (5)",
+    "KSampler (5) → VAEDecode (6)",
+    "CheckpointLoader (1) → VAEDecode (6)",
+    "VAEDecode (6) → SaveImage (7)"
+  ],
+  "production_tips": {
+    "batch_generation": "For campaigns needing 50+ assets, increase batch_size in EmptyLatentImage node. Monitor VRAM usage. Alternatively, use Queue Prompt repeatedly with locked seed incrementing (+1 each time).",
+    "consistency_strategy": "Lock seed, checkpoint, sampler, and steps once client approves. Only vary prompt text for different subjects/scenes.",
+    "quality_control": "Generate 3-5 variations per concept (vary seed slightly). Select best, then refine in Photoshop.",
+    "speed_vs_quality": "For drafts: 20 steps, cfg 6. For finals: 30 steps, cfg 7.5. Don't exceed 40 steps - diminishing returns.",
+    "organization": "Create project-specific folders. Use filename_prefix to auto-organize outputs by client/campaign/asset type."
+  },
+  "common_issues": {
+    "hands_deformed": "Add 'perfect hands, correct anatomy' to positive prompt. 'deformed hands, extra fingers' to negative. May need multiple generations.",
+    "face_issues": "Lower CFG to 6-7 for more natural faces. Add 'photorealistic face, detailed features' to positive.",
+    "inconsistent_style": "Ensure same checkpoint, seed, sampler, and steps. Small prompt changes are OK, but maintain core structure.",
+    "low_quality": "Increase steps to 30-35. Check negative prompt includes 'low quality, blurry'. Use quality-focused checkpoint.",
+    "out_of_memory": "Reduce batch_size to 1. Lower resolution. Close other applications. Upgrade GPU if recurring issue."
+  },
+  "extensions_for_advanced_workflows": {
+    "controlnet": {
+      "description": "Precise control over composition using reference images (pose, depth, edges)",
+      "use_case": "When you need exact product placement or specific human poses. Essential for batch consistency.",
+      "agency_application": "Brand campaign needing 20 images with identical composition but different backgrounds."
+    },
+    "lora": {
+      "description": "Lightweight trained models for specific styles, subjects, or concepts",
+      "use_case": "Brand-specific visual styles, particular aesthetics, or consistent character/product rendering.",
+      "agency_application": "Train LoRA on client's existing brand photography to ensure AI generations match brand guidelines."
+    },
+    "upscaling": {
+      "description": "Increase resolution without quality loss using AI upscalers",
+      "use_case": "Print-ready outputs, large format displays, high-resolution deliverables.",
+      "agency_application": "Social media asset (1024x1024) needs to become 8x10 print (2400x3000)."
+    },
+    "inpainting": {
+      "description": "Modify specific areas of generated images while maintaining context",
+      "use_case": "Post-generation edits, fixing errors, swapping elements.",
+      "agency_application": "Generated image is perfect except logo color is wrong - inpaint just the logo area."
+    },
+    "img2img": {
+      "description": "Use existing image as starting point, transform style while maintaining composition",
+      "use_case": "Style transfer, concept variations, reference-based generation.",
+      "agency_application": "Client provides photo, wants it reimagined in different artistic style for campaign."
+    }
+  },
+  "installation_notes": {
+    "requirements": [
+      "NVIDIA GPU with 8GB+ VRAM (12GB+ recommended for production)",
+      "Windows 10/11 or Linux",
+      "Python 3.10+",
+      "Git"
+    ],
+    "basic_setup": [
+      "1. Clone ComfyUI repository from GitHub",
+      "2. Install dependencies (pip install -r requirements.txt)",
+      "3. Download checkpoint models to models/checkpoints/",
+      "4. Run python main.py",
+      "5. Access web interface at localhost:8188"
+    ],
+    "recommended_models": [
+      "Realistic Vision v5.1 (photorealistic)",
+      "DreamShaper 8 (versatile, good quality)",
+      "Juggernaut XL (SDXL for high resolution)",
+      "Consider custom training for specific client brands"
+    ],
+    "agency_infrastructure": [
+      "Dedicated GPU workstation(s) for generation",
+      "Network shared model library (avoid duplicate downloads)",
+      "Backup workflows and custom models regularly",
+      "Document which models are approved for which clients"
+    ]
+  },
+  "next_steps": {
+    "beginner": "Start with this basic workflow. Master prompt engineering and parameter effects before adding complexity.",
+    "intermediate": "Add ControlNet for composition control. Experiment with LoRAs for style consistency.",
+    "advanced": "Custom model training on brand assets. Multi-stage workflows with upscaling and inpainting. Batch automation scripts.",
+    "agency_integration": "Develop standardized workflows per client/campaign type. Train team on consistent usage. Build prompt and setting libraries."
+  },
+  "recommended_learning_resources": [
+    "ComfyUI Official Examples on GitHub",
+    "ComfyUI Community Discord",
+    "Civitai.com (model repository with examples)",
+    "YouTube: 'ComfyUI tutorial for beginners'",
+    "Reddit: r/StableDiffusion and r/comfyui"
+  ],
+  "agency_workflow_example": {
+    "scenario": "Generate 20 product lifestyle images for e-commerce client",
+    "approach": [
+      "1. Lock checkpoint and settings using this workflow",
+      "2. Create prompt template: '[PRODUCT] on [SURFACE], [LIFESTYLE CONTEXT], natural light, product photography style, high detail, 8k'",
+      "3. Generate seed 42-61 (20 variations)",
+      "4. Quality control: select best 15",
+      "5. Post-production in Photoshop (color correction, minor cleanup)",
+      "6. Upscale to required resolution",
+      "7. Deliver with generation documentation"
+    ],
+    "time_estimate": "8-12 hours (vs 3-5 days for traditional photography)",
+    "cost_savings": "Eliminates photography session ($2k-5k), studio rental, product styling"
+  }
+}
